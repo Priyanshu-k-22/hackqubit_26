@@ -1,6 +1,10 @@
 import {useEffect,useRef,useState} from 'react';import {useSearchParams} from 'react-router-dom';import jsQR from 'jsqr';
 import {Camera,Upload,Loader2} from 'lucide-react';import {scannerApi} from '../services/api';import Result from '../components/Result';import {ErrorBox} from '../components/ui';
-const STEPS=['Validating input','Checking local URL keywords and patterns','Preparing risk summary'];
+const STEPS=[
+  'Validating URL',
+  'Analyzing URL structure and impersonation signals',
+  'Building threat-intelligence result'
+];
 const OTHER_STEPS=['Validating input','Checking local risk signals','Preparing risk summary'];
 const urlError=input=>{
   if(input.length>2048)return 'URL must be 2048 characters or fewer.';
@@ -40,7 +44,11 @@ export default function Scanner({initial}){
      if(tab==='url'){const message=urlError(v);if(message){setErr(message);return}}
      if(tab==='upi'&&!/^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(v)){setErr('Enter a valid UPI ID, e.g. name@bank.');return}run(()=>tab==='url'?scannerApi.analyzeUrl(v):scannerApi.analyzeUpi(v))}}>
      <input className="inp flex-1" aria-label={tab} value={val} onChange={e=>setVal(e.target.value)} placeholder={tab==='url'?'https://example-payment-site.com':'name@bank'}/><button className="btn-p" disabled={busy}>Analyze target</button><button type="button" className="btn-s" onClick={clear}>Clear</button></form>}
-   {tab==='url'&&<p className="mt-3 text-xs text-slate-500">URL analysis runs locally on the backend using keyword and URL-structure rules. It does not open the site or query an external reputation service.</p>}
+   {tab==='url'&&<p className="mt-3 text-xs text-slate-500">
+  URL analysis runs on the backend using URL-structure,
+  suspicious-term, sensitive-parameter and brand-impersonation
+  intelligence. The submitted site is never opened by the scanner.
+</p>}
    {tab==='qr'&&<div className="space-y-4"><div className="flex gap-2">{!cam?<button className="btn-p" onClick={open}><Camera size={16}/>Open camera</button>:<button className="btn-s" onClick={stop}>Close camera</button>}</div>
      {cam&&<div className="relative mx-auto aspect-video max-w-md overflow-hidden rounded-lg bg-black"><video ref={vid} muted playsInline className="h-full w-full object-cover"/><div className="absolute inset-[22%] border-2 border-cyan-400"><div className="sweep absolute left-0 h-0.5 w-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]"/></div></div>}{Drop}</div>}
    {tab==='image'&&<div className="space-y-2"><p className="text-sm text-slate-500">Upload a payment screenshot or suspicious page. QR codes inside are decoded in your browser first; otherwise the image goes to analysis.</p>{Drop}</div>}

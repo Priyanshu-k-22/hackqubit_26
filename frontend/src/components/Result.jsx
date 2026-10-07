@@ -1,29 +1,577 @@
-import {useState} from 'react';import {Link} from 'react-router-dom';
-import {RiskBadge,Bar,Demo} from './ui';import {level,freqLabel} from '../utils/risk';
-const nodes=r=>[['Brand',r.brand,50,20],['Campaign',r.campaign,50,75],['Domain',r.domain,20,135],['IP','192.0.2.10 (demo)',50,135],['Certificate','Self-signed (demo)',80,135],['VPA',r.upi,50,190]];
-export default function Result({r,printMode}){
-  const [sel,setSel]=useState(null),l=level(r.score),low=l==='LOW';
-  const isUrlResult=r.kind==='url'&&Boolean(r.status);
-  const isQrResult=r.kind==='qr'&&Boolean(r.status);
-  const F=({k,v})=><div><dt className="text-xs text-slate-500">{k}</dt><dd className="break-all font-mono text-sm">{String(v)}</dd></div>;
-  return <div className="space-y-4">
-  <div className={`panel p-5 ${(isUrlResult||isQrResult)?(r.status==='AUTHORIZED'?'border-emerald-500/50':'border-red-500/50'):low?'border-emerald-500/50':'border-red-500/40'}`}><div className="flex flex-wrap items-center justify-between gap-3">
-   <div><div className="text-sm font-semibold">{isUrlResult?(r.status==='AUTHORIZED'?'🟢 LOW — Authorized':r.status==='INVALID URL'?'⚠️ INVALID — Invalid URL':'🔴 HIGH — Domain Not Authorized'):isQrResult?(r.status==='AUTHORIZED'?'🟢 LOW — Authorized Payment QR':r.status==='NON-PAYMENT QR'?'🔴 HIGH — Non-payment QR':'🔴 HIGH — Unknown / Not Authorized'): `${l} RISK`}</div><div className="text-4xl font-bold">{(isUrlResult||isQrResult)?r.riskLevel:r.score}<span className="text-lg text-slate-500">{(isUrlResult||isQrResult)?'':' / 100'}</span></div></div>
-   <div className="flex gap-2 items-center"><RiskBadge score={r.score}/>{r.demo&&<Demo/>}{!printMode&&<Link to={`/report/${r.id}`} className="btn-p">Generate full report</Link>}</div></div>
-   {r.backendUnavailable&&<p className="mt-2 text-sm text-amber-600">Intelligence backend unavailable. Demo mode enabled.</p>}
-   <p className="mt-2 text-xs text-slate-500">{isQrResult?'Low Risk means the QR matches our authorized payment allowlist. Unknown QR codes are classified as High Risk for precautionary purposes; this does not confirm fraud.':isUrlResult?'Allowlist-based MVP: an unknown domain is not confirmed fraudulent.':r.demo?'Scores are synthetic demo values and are not scientifically validated.':'This is a heuristic assessment, not a fraud verdict.'}{r.kind==='url'?' The scan checks the hostname locally and does not open the site or follow redirects.':''} Low risk does not guarantee safety.</p></div>
-  <div className="grid gap-4 md:grid-cols-2">
-   {isQrResult&&<section className={`panel p-4 md:col-span-2 ${r.status==='AUTHORIZED'?'border-emerald-500/50':'border-red-500/50'}`}><h3 className="mb-3 font-medium">QR Shield</h3><dl className="grid grid-cols-2 gap-3"><F k="QR code detected" v="Yes"/><F k="Type" v={r.qrType?.replaceAll('_',' ')||'UNKNOWN'}/><F k="Provider" v={r.provider||'Unknown'}/><F k="Payee UPI ID" v={r.upi==='-'?'Not available':r.upi}/><F k="Payee name" v={r.payee==='-'?'Not available':r.payee}/><F k="Amount" v={r.amount?`${r.currency==='INR'?'₹':`${r.currency} `}${r.amount}`:'Not specified'}/><F k="Risk level" v={r.riskLevel}/><F k="Status" v={r.status==='AUTHORIZED'?'AUTHORIZED PAYMENT QR':r.status==='NON-PAYMENT QR'?'NON-PAYMENT QR':'UNAUTHORIZED / UNKNOWN QR'}/><F k="Reason" v={r.reason}/><F k="Recommendation" v={r.recommendation}/></dl><p className="mt-3 break-all text-xs text-slate-500">Decoded payload: {r.input}</p></section>}
-   <section className="panel p-4"><h3 className="mb-3 font-medium">Risk breakdown</h3><div className="space-y-3">{Object.entries(r.breakdown).map(([k,v])=><Bar key={k} label={k} v={v}/>)}</div></section>
-   <section className="panel p-4"><h3 className="mb-3 font-medium">{low?'Why is this considered low risk?':'Why did we flag this?'}</h3><ul className="space-y-1 text-sm">{r.evidence.map(e=><li key={e}>✓ {e}</li>)}</ul></section>
-   <section className="panel p-4"><h3 className="mb-3 font-medium">Target details</h3><dl className="grid grid-cols-2 gap-3"><F k="Input type" v={r.kind.toUpperCase()}/><F k="Entered URL" v={r.input}/><F k="Extracted domain" v={r.domain||'Unavailable'}/>{isUrlResult&&<><F k="Authorization status" v={r.status}/><F k="Reason" v={r.reason}/><F k="Matched trusted domain" v={r.matchedDomain||'None'}/></>}<F k="Protocol" v={r.protocol||'Unknown'}/><F k="UPI ID" v={r.upi}/><F k="Payee name" v={r.payee}/><F k="Redirects" v={r.redirects??'Not checked'}/><F k="Brand" v={r.brand}/></dl></section>
-   {r.urlDetails&&<section className="panel p-4"><h3 className="mb-3 font-medium">URL structure checks</h3><dl className="grid grid-cols-2 gap-3"><F k="Hostname" v={r.urlDetails.hostname}/><F k="Path" v={r.urlDetails.path||'/'}/><F k="Query parameters" v={r.urlDetails.queryParameterCount}/><F k="Sensitive parameter names" v={r.urlDetails.sensitiveQueryParameterCount}/><F k="HTTPS" v={r.urlDetails.usesHttps?'Yes':'No'}/><F k="IP address" v={r.urlDetails.ipVersion?`IPv${r.urlDetails.ipVersion}`:'No'}/><F k="Nested hostname labels" v={r.urlDetails.subdomainCount}/><F k="Punycode label" v={r.urlDetails.hasPunycode?'Detected':'Not detected'}/><F k="Non-standard port" v={r.urlDetails.hasNonStandardPort?'Detected':'Not detected'}/></dl><p className="mt-3 text-xs text-slate-500">Query values are redacted in the saved result. Redirect destinations and website content are not checked.</p></section>}
-   <section className="panel p-4"><h3 className="mb-3 font-medium">Threat frequency</h3><dl className="grid grid-cols-2 gap-3"><F k="Total reports" v={r.reports}/><F k="Unique reporters" v={r.users}/><F k="First detected" v={r.first}/><F k="Last detected" v={r.last}/><F k="Campaign" v={r.campaign}/><F k="Status" v={r.status}/></dl>
-    <p className="mt-3 rounded bg-slate-100 p-2 text-sm dark:bg-ink-800">{freqLabel(r.reports)}. {r.status==='Confirmed Threat'?'Confirmed by threat intelligence.':'Report count alone does not confirm fraud.'}</p></section></div>
-  {r.paymentAssessment&&<section className={`panel p-4 ${r.paymentAssessment.outcome==='unsafe'?'border-red-500/50':'border-amber-500/40'}`}><h3 className="font-medium">Payment guidance</h3><p className="mt-1 text-sm">{r.paymentAssessment.message}</p></section>}
-  {!low&&r.demo&&<section className="panel p-4"><h3 className="mb-2 font-medium">Infrastructure graph <span className="text-xs text-slate-500">(click a node)</span></h3><div className="grid gap-3 md:grid-cols-2">
-   <svg viewBox="0 0 100 210" className="h-64 w-full" role="img" aria-label="Infrastructure graph">{[[0,1],[1,2],[1,3],[1,4],[3,5]].map(([a,b])=>{const A=nodes(r)[a],B=nodes(r)[b];return <line key={a+'-'+b} x1={A[2]} y1={A[3]} x2={B[2]} y2={B[3]} stroke="#64748b" strokeWidth=".6"/>})}
-   {nodes(r).map(n=><g key={n[0]} tabIndex={0} role="button" aria-label={n[0]} className="cursor-pointer outline-none" onClick={()=>setSel(n)} onKeyDown={e=>e.key==='Enter'&&setSel(n)}><circle cx={n[2]} cy={n[3]} r="9" fill={sel===n?'#0891b2':'#1e2942'} stroke="#22d3ee" strokeWidth=".8"/><text x={n[2]} y={n[3]+2} fontSize="4" textAnchor="middle" fill="#fff">{n[0]}</text></g>)}</svg>
-   <div className="rounded border border-dashed p-3 text-sm dark:border-ink-700">{sel?<dl className="space-y-1"><div><b>Type:</b> {sel[0]}</div><div className="break-all"><b>Value:</b> {sel[1]}</div><div><b>First seen:</b> {r.first}</div><div><b>Last seen:</b> {r.last}</div><div><b>Related threats:</b> {r.campaign}</div><div className="text-xs text-slate-500">Demo node. Replace with graph API (e.g. Neo4j).</div></dl>:'Select a node to inspect it.'}</div></div></section>}
-  {!low&&!r.demo&&<section className="panel p-4 text-sm text-slate-500"><h3 className="font-medium text-slate-900 dark:text-slate-100">Infrastructure analysis</h3><p className="mt-1">IP reputation, certificate details, redirects, and related infrastructure are not checked by this URL scan.</p></section>}
-  </div>}
+import { useState } from "react";
+import { Link } from "react-router-dom";
+
+import {
+  RiskBadge,
+  Bar,
+  Demo,
+} from "./ui";
+
+import {
+  level,
+  freqLabel,
+} from "../utils/risk";
+
+const demoNodes = r => [
+  ["Brand", r.brand, 50, 20],
+  ["Campaign", r.campaign, 50, 75],
+  ["Domain", r.domain, 20, 135],
+  ["IP", "Not checked", 50, 135],
+  ["Certificate", "Not checked", 80, 135],
+  ["VPA", r.upi, 50, 190],
+];
+
+const urlHeadline = r => {
+  if (r.status === "INVALID URL") {
+    return "⚠️ INVALID — Invalid URL";
+  }
+
+  if (r.riskLevel === "CRITICAL") {
+    return "🔴 CRITICAL — Strong threat indicators";
+  }
+
+  if (r.riskLevel === "HIGH") {
+    return "🔴 HIGH — Suspicious URL";
+  }
+
+  if (r.riskLevel === "MEDIUM") {
+    return "🟠 MEDIUM — Verify before proceeding";
+  }
+
+  if (r.status === "AUTHORIZED") {
+    return "🟢 LOW — Authorized domain";
+  }
+
+  return "🟢 LOW — No strong indicators detected";
+};
+
+export default function Result({
+  r,
+  printMode,
+}) {
+  const [sel, setSel] =
+    useState(null);
+
+  const l = level(r.score);
+
+  const low =
+    l === "LOW";
+
+  const isUrlResult =
+    r.kind === "url" &&
+    Boolean(r.status);
+
+  const isQrResult =
+    r.kind === "qr" &&
+    Boolean(r.status);
+
+  const F = ({ k, v }) => (
+    <div>
+      <dt className="text-xs text-slate-500">
+        {k}
+      </dt>
+
+      <dd className="break-all font-mono text-sm">
+        {String(v)}
+      </dd>
+    </div>
+  );
+
+  const headline =
+    isUrlResult
+      ? urlHeadline(r)
+      : isQrResult
+        ? r.status === "AUTHORIZED"
+          ? "🟢 LOW — Authorized Payment QR"
+          : r.status ===
+              "NON-PAYMENT QR"
+            ? "🟠 MEDIUM — Non-payment QR"
+            : "🔴 HIGH — Unknown / Unauthorized QR"
+        : `${l} RISK`;
+
+  return (
+    <div className="space-y-4">
+
+      {/* MAIN RESULT */}
+
+      <div
+        className={`panel p-5 ${
+          low
+            ? "border-emerald-500/50"
+            : "border-red-500/40"
+        }`}
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+
+          <div>
+            <div className="text-sm font-semibold">
+              {headline}
+            </div>
+
+            <div className="text-4xl font-bold">
+              {r.score}
+
+              <span className="text-lg text-slate-500">
+                {" "} / 100
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+
+            <RiskBadge
+              score={r.score}
+            />
+
+            {r.demo && <Demo />}
+
+            {!printMode && (
+              <Link
+                to={`/report/${r.id}`}
+                className="btn-p"
+              >
+                Generate full report
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {r.backendUnavailable && (
+          <p className="mt-2 text-sm text-amber-600">
+            Intelligence backend unavailable.
+            Demo fallback was used.
+          </p>
+        )}
+
+        <p className="mt-2 text-xs text-slate-500">
+          {isUrlResult
+            ? "This URL assessment uses local structural and brand-impersonation intelligence. It does not open the destination or follow redirects."
+            : isQrResult
+              ? "Unknown QR codes are treated cautiously. This does not prove that the payee is fraudulent."
+              : r.demo
+                ? "Scores are synthetic demo values and are not scientifically validated."
+                : "This is a heuristic assessment, not a fraud verdict."}
+
+          {" "}Low risk does not guarantee safety.
+        </p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+
+        {/* RISK BREAKDOWN */}
+
+        <section className="panel p-4">
+          <h3 className="mb-3 font-medium">
+            Risk breakdown
+          </h3>
+
+          <div className="space-y-3">
+            {Object.entries(
+              r.breakdown || {}
+            ).map(([k, v]) => (
+              <Bar
+                key={k}
+                label={k}
+                v={v}
+              />
+            ))}
+          </div>
+        </section>
+
+        {/* EVIDENCE */}
+
+        <section className="panel p-4">
+          <h3 className="mb-3 font-medium">
+            {low
+              ? "Why is this considered low risk?"
+              : "Why did we flag this?"}
+          </h3>
+
+          <ul className="space-y-1 text-sm">
+            {(r.evidence || []).map(
+              evidence => (
+                <li key={evidence}>
+                  ✓ {evidence}
+                </li>
+              )
+            )}
+          </ul>
+        </section>
+
+        {/* TARGET */}
+
+        <section className="panel p-4 md:col-span-2">
+          <h3 className="mb-3 font-medium">
+            Target details
+          </h3>
+
+          <dl className="grid grid-cols-2 gap-3">
+
+            <F
+              k="Input type"
+              v={
+                r.kind?.toUpperCase() ||
+                "UNKNOWN"
+              }
+            />
+
+            <F
+              k="Entered URL"
+              v={
+                r.input ||
+                "Unavailable"
+              }
+            />
+
+            <F
+              k="Extracted domain"
+              v={
+                r.domain ||
+                "Unavailable"
+              }
+            />
+
+            {isUrlResult && (
+              <>
+                <F
+                  k="Authorization status"
+                  v={r.status}
+                />
+
+                <F
+                  k="Reason"
+                  v={r.reason}
+                />
+
+                <F
+                  k="Matched trusted domain"
+                  v={
+                    r.matchedDomain ||
+                    "None"
+                  }
+                />
+              </>
+            )}
+
+            <F
+              k="Protocol"
+              v={
+                r.protocol ||
+                "Unknown"
+              }
+            />
+
+            <F
+              k="UPI ID"
+              v={r.upi || "-"}
+            />
+
+            <F
+              k="Payee name"
+              v={r.payee || "-"}
+            />
+
+            <F
+              k="Redirects"
+              v={
+                r.redirects ??
+                "Not checked"
+              }
+            />
+
+            <F
+              k="Brand"
+              v={
+                r.brand ||
+                "Unknown"
+              }
+            />
+
+          </dl>
+        </section>
+
+        {/* URL INTELLIGENCE */}
+
+        {r.urlDetails && (
+          <section className="panel p-4 md:col-span-2">
+
+            <h3 className="mb-3 font-medium">
+              URL intelligence
+            </h3>
+
+            <dl className="grid grid-cols-2 gap-3 md:grid-cols-3">
+
+              <F
+                k="Hostname"
+                v={
+                  r.urlDetails.hostname
+                }
+              />
+
+              <F
+                k="Path"
+                v={
+                  r.urlDetails.path ||
+                  "/"
+                }
+              />
+
+              <F
+                k="Query parameters"
+                v={
+                  r.urlDetails
+                    .queryParameterCount
+                }
+              />
+
+              <F
+                k="Sensitive parameter names"
+                v={
+                  r.urlDetails
+                    .sensitiveQueryParameterCount
+                }
+              />
+
+              <F
+                k="HTTPS"
+                v={
+                  r.urlDetails
+                    .usesHttps
+                    ? "Yes"
+                    : "No"
+                }
+              />
+
+              <F
+                k="IP address"
+                v={
+                  r.urlDetails.ipVersion
+                    ? `IPv${r.urlDetails.ipVersion}`
+                    : "No"
+                }
+              />
+
+              <F
+                k="Nested hostname labels"
+                v={
+                  r.urlDetails
+                    .subdomainCount
+                }
+              />
+
+              <F
+                k="Punycode label"
+                v={
+                  r.urlDetails.hasPunycode
+                    ? "Detected"
+                    : "Not detected"
+                }
+              />
+
+              <F
+                k="Non-standard port"
+                v={
+                  r.urlDetails
+                    .hasNonStandardPort
+                    ? "Detected"
+                    : "Not detected"
+                }
+              />
+
+              <F
+                k="Suspicious keywords"
+                v={
+                  r.urlDetails
+                    .suspiciousKeywords
+                    ?.join(", ") ||
+                  "None"
+                }
+              />
+
+              <F
+                k="Suspicious path"
+                v={
+                  r.urlDetails
+                    .suspiciousPath
+                    ? "Detected"
+                    : "Not detected"
+                }
+              />
+
+            </dl>
+
+            <p className="mt-3 text-xs text-slate-500">
+              Query values are redacted.
+              The backend does not open the submitted URL.
+            </p>
+
+          </section>
+        )}
+
+        {/* THREAT FREQUENCY */}
+
+        <section className="panel p-4 md:col-span-2">
+
+          <h3 className="mb-3 font-medium">
+            Threat frequency
+          </h3>
+
+          <dl className="grid grid-cols-2 gap-3">
+
+            <F
+              k="Observations"
+              v={r.reports ?? 0}
+            />
+
+            <F
+              k="Unique reporters"
+              v={r.users ?? 0}
+            />
+
+            <F
+              k="First detected"
+              v={r.first || "-"}
+            />
+
+            <F
+              k="Last detected"
+              v={r.last || "-"}
+            />
+
+            <F
+              k="Campaign"
+              v={r.campaign || "-"}
+            />
+
+            <F
+              k="Status"
+              v={r.status || "-"}
+            />
+
+          </dl>
+
+          <p className="mt-3 rounded bg-slate-100 p-2 text-sm dark:bg-ink-800">
+            {freqLabel(
+              r.reports || 0
+            )}
+
+            . Repeated observations
+            are a signal, not proof of fraud.
+          </p>
+
+        </section>
+
+      </div>
+
+      {/* DEMO GRAPH ONLY */}
+
+      {!low && r.demo && (
+        <section className="panel p-4">
+
+          <h3 className="mb-2 font-medium">
+            Infrastructure graph
+            <span className="text-xs text-slate-500">
+              {" "}(demo)
+            </span>
+          </h3>
+
+          <div className="grid gap-3 md:grid-cols-2">
+
+            <svg
+              viewBox="0 0 100 210"
+              className="h-64 w-full"
+              role="img"
+              aria-label="Infrastructure graph"
+            >
+              {[
+                [0, 1],
+                [1, 2],
+                [1, 3],
+                [1, 4],
+                [3, 5],
+              ].map(([a, b]) => {
+                const A =
+                  demoNodes(r)[a];
+
+                const B =
+                  demoNodes(r)[b];
+
+                return (
+                  <line
+                    key={`${a}-${b}`}
+                    x1={A[2]}
+                    y1={A[3]}
+                    x2={B[2]}
+                    y2={B[3]}
+                    stroke="#64748b"
+                    strokeWidth=".6"
+                  />
+                );
+              })}
+
+              {demoNodes(r).map(n => (
+                <g
+                  key={n[0]}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={n[0]}
+                  className="cursor-pointer"
+                  onClick={() =>
+                    setSel(n)
+                  }
+                  onKeyDown={e =>
+                    e.key === "Enter" &&
+                    setSel(n)
+                  }
+                >
+                  <circle
+                    cx={n[2]}
+                    cy={n[3]}
+                    r="9"
+                    fill={
+                      sel === n
+                        ? "#0891b2"
+                        : "#1e2942"
+                    }
+                    stroke="#22d3ee"
+                    strokeWidth=".8"
+                  />
+
+                  <text
+                    x={n[2]}
+                    y={n[3] + 2}
+                    fontSize="4"
+                    textAnchor="middle"
+                    fill="#fff"
+                  >
+                    {n[0]}
+                  </text>
+                </g>
+              ))}
+            </svg>
+
+            <div className="rounded border border-dashed p-3 text-sm dark:border-ink-700">
+              {sel ? (
+                <dl className="space-y-1">
+                  <div>
+                    <b>Type:</b>{" "}
+                    {sel[0]}
+                  </div>
+
+                  <div className="break-all">
+                    <b>Value:</b>{" "}
+                    {sel[1]}
+                  </div>
+                </dl>
+              ) : (
+                "Select a node to inspect it."
+              )}
+            </div>
+
+          </div>
+        </section>
+      )}
+
+    </div>
+  );
+}

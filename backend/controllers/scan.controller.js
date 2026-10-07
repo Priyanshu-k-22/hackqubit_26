@@ -26,15 +26,24 @@ const scanUrl = (req, res) => {
     }
 
     const result = analyzeUrl(url);
+
     result.paymentAssessment = {
-      outcome: result.status === "AUTHORIZED" ? "authorized" : "unverified",
+      outcome:
+        result.status === "AUTHORIZED"
+          ? "authorized"
+          : "unverified",
+
       message: result.reason,
     };
+
     return res.status(201).json(result);
   } catch (error) {
     if (error.statusCode === 400) {
-      return res.status(400).json({ message: error.message });
+      return res.status(400).json({
+        message: error.message,
+      });
     }
+
     console.error("URL scan error:", error);
 
     return res.status(500).json({

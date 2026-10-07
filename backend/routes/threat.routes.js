@@ -1,9 +1,14 @@
 const express = require("express");
+
 const router = express.Router();
 
-const { getAllThreats, getThreat } = require("../services/threatStore");
+const {
+  getAllThreats,
+  getThreat,
+  getThreatById,
+} = require("../services/threatStore");
 
-// Get all known threats
+// GET /api/threats
 router.get("/", (req, res) => {
   res.json({
     success: true,
@@ -11,7 +16,23 @@ router.get("/", (req, res) => {
   });
 });
 
-// Get one threat by input
+// GET /api/threats/id/:id
+router.get("/id/:id", (req, res) => {
+  const threat = getThreatById(req.params.id);
+
+  if (!threat) {
+    return res.status(404).json({
+      message: "Threat not found",
+    });
+  }
+
+  return res.json({
+    success: true,
+    threat,
+  });
+});
+
+// GET /api/threats/lookup?input=example.com
 router.get("/lookup", (req, res) => {
   const { input } = req.query;
 
@@ -29,7 +50,7 @@ router.get("/lookup", (req, res) => {
     });
   }
 
-  res.json({
+  return res.json({
     success: true,
     input,
     ...threat,

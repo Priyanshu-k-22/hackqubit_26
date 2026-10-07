@@ -29,7 +29,6 @@ app.use("/api/scan", scanRoutes);
 app.use("/api/threats", threatRoutes);
 
 
-
 // Start server
 app.listen(PORT, () => {
   console.log(`UPIShield backend running on http://localhost:${PORT}`);
