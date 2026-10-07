@@ -1,187 +1,370 @@
-const fs = require("node:fs");
-const path = require("node:path");
 const crypto = require("node:crypto");
 
-const dataDir = path.join(__dirname, "../data");
-const dataFile = path.join(dataDir, "threats.json");
+const Threat = require("../models/Threat");
+const ScanReport = require("../models/ScanReport");
 
-function ensureStore() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
+// ==================================================
+// HELPERS
+// ==================================================
 
-  if (!fs.existsSync(dataFile)) {
-    fs.writeFileSync(dataFile, "{}", "utf8");
-  }
-}
+const normalizeInput = (input) => {
+  return String(input || "")
+    .trim()
+    .toLowerCase();
+};
 
-function readStore() {
-  ensureStore();
+const createCampaignId = () => {
+  return `CAM-${crypto
+    .randomUUID()
+    .replace(/-/g, "")
+    .slice(0, 8)
+    .toUpperCase()}`;
+};
 
-  try {
-    return JSON.parse(fs.readFileSync(dataFile, "utf8"));
-  } catch {
-    return {};
-  }
-}
+// ==================================================
+// RECORD THREAT
+// ==================================================
 
-function writeStore(store) {
-  ensureStore();
+const recordThreat = async (
+  input,
+  data = {}
+) => {
+  const normalizedTarget =
+    normalizeInput(input);
 
-  const tempFile = `${dataFile}.${process.pid}.tmp`;
-
-  fs.writeFileSync(
-    tempFile,
-    JSON.stringify(store, null, 2),
-    "utf8"
-  );
-
-  fs.renameSync(tempFile, dataFile);
-}
-
-const today = () =>
-  new Date().toISOString().slice(0, 10);
-
-function createCampaignId(key) {
-  const digest = crypto
-    .createHash("sha256")
-    .update(key)
-    .digest("hex");
-
-  return `CAM-${(parseInt(digest.slice(0, 6), 16) % 900) + 100}`;
-}
-
-function recordThreat(input, data = {}) {
-  const key = String(input).trim().toLowerCase();
-
-  if (!key) {
-    throw new Error("Threat input cannot be empty");
-  }
-
-  const store = readStore();
-  const existing = store[key];
-  const now = today();
-
-  if (existing) {
-    existing.reports += 1;
-
-    existing.users = Math.max(
-      existing.users || 1,
-      existing.reports
+  if (!normalizedTarget) {
+    throw new Error(
+      "Threat input cannot be empty"
     );
+  }
 
-    existing.last = now;
+  const now = new Date();
 
-    existing.risk = Math.max(
-      existing.risk,
-      Number(data.risk) || 0
-    );
+  const type =
+    data.type || "URL";
 
-    existing.riskLevel =
-      data.riskLevel || existing.riskLevel;
+  const campaign =
+    data.campaign ||
+    createCampaignId();
 
-    existing.status =
-      data.status || existing.status;
+  // ==================================================
+  // CREATE INDIVIDUAL SCAN REPORT
+  // ==================================================
 
-    existing.reason =
-      data.reason || existing.reason;
+  const scanId =
+    `SCN-${crypto
+      .randomUUID()
+      .replace(/-/g, "")
+      .slice(0, 12)
+      .toUpperCase()}`;
 
-    existing.brand =
-      data.brand || existing.brand;
+  const report =
+    await ScanReport.create({
+      scanId,
 
-    existing.target =
-      data.target || existing.target;
+      type,
 
-    existing.type =
-      data.type || existing.type;
+      input:
+        data.input ||
+        String(input),
 
-    existing.analysis =
-      data.analysis || existing.analysis;
-  } else {
-    store[key] = {
-      id: `THR-${crypto
-        .randomUUID()
-        .replace(/-/g, "")
-        .slice(0, 12)
-        .toUpperCase()}`,
+      normalizedInput:
+        normalizedTarget,
 
-      target: data.target || key,
+      target:
+        data.target || "",
 
-      input: key,
+      domain:
+        data.domain || "",
 
-      type: data.type || "URL",
-
-      risk: Number(data.risk) || 0,
+      score:
+        Number(data.score) || 0,
 
       riskLevel:
-        data.riskLevel || "LOW",
-
-      brand:
-        data.brand || "Unknown",
-
-      reports: 1,
-
-      users: 1,
-
-      first: now,
-
-      last: now,
-
-      campaign:
-        data.campaign ||
-        createCampaignId(
-          data.campaignKey || key
-        ),
+        data.riskLevel ||
+        "LOW",
 
       status:
-        data.status || "Analyzed",
+        data.status ||
+        "UNKNOWN",
 
       reason:
-        data.reason ||
-        "Observed by the URL intelligence engine",
+        data.reason || "",
 
-      analysis:
-        data.analysis || null,
-    };
+      brand:
+        data.brand ||
+        "Unknown",
+
+      campaign,
+
+      evidence:
+        Array.isArray(
+          data.evidence
+        )
+          ? data.evidence
+          : [],
+
+      breakdown:
+        data.breakdown || {},
+
+      metadata:
+        data.metadata || {},
+
+      reporter:
+        data.reporter || null,
+
+      ipAddress:
+        data.ipAddress || null,
+
+      userAgent:
+        data.userAgent || null,
+    });
+
+  // ==================================================
+  // UPDATE AGGREGATED THREAT
+  // ==================================================
+
+  const threat =
+    await Threat.findOneAndUpdate(
+      {
+        normalizedTarget,
+      },
+
+      {
+        $setOnInsert: {
+          input:
+            data.input ||
+            String(input),
+
+          normalizedTarget,
+
+          type,
+
+          first:
+            now,
+
+          campaign,
+        },
+
+        $set: {
+          target:
+            data.target || "",
+
+          domain:
+            data.domain || "",
+
+          brand:
+            data.brand ||
+            "Unknown",
+
+          score:
+            Number(data.score) || 0,
+
+          riskLevel:
+            data.riskLevel ||
+            "LOW",
+
+          status:
+            data.status ||
+            "UNKNOWN",
+
+          reason:
+            data.reason || "",
+
+          latestReportId:
+            report._id,
+
+          latestAnalysis:
+            data.analysis || {},
+
+          last:
+            now,
+        },
+
+        $inc: {
+          reports: 1,
+
+          // Currently every scan counts.
+          // Later this can use authenticated user IDs.
+          users: 1,
+        },
+      },
+
+      {
+        new: true,
+
+        upsert: true,
+
+        setDefaultsOnInsert:
+          true,
+      }
+    );
+
+  // ==================================================
+  // RETURN FRONTEND DATA
+  // ==================================================
+
+  return {
+    id:
+      threat._id.toString(),
+
+    reportId:
+      report._id.toString(),
+
+    scanId:
+      report.scanId,
+
+    reports:
+      threat.reports,
+
+    users:
+      threat.users,
+
+    first:
+      threat.first,
+
+    last:
+      threat.last,
+
+    campaign:
+      threat.campaign,
+
+    status:
+      threat.status,
+
+    risk:
+      threat.score,
+
+    riskLevel:
+      threat.riskLevel,
+  };
+};
+
+// ==================================================
+// GET ONE THREAT
+// ==================================================
+
+const getThreat = async (
+  input
+) => {
+  const normalizedTarget =
+    normalizeInput(input);
+
+  return Threat.findOne({
+    normalizedTarget,
+  }).lean();
+};
+
+// ==================================================
+// GET ALL THREATS
+// ==================================================
+
+const getAllThreats =
+  async () => {
+    return Threat.find({})
+      .sort({
+        score: -1,
+        last: -1,
+      })
+      .lean();
+  };
+
+// ==================================================
+// GET REPORTS
+// ==================================================
+
+const getReports = async ({
+  page = 1,
+  limit = 20,
+  type,
+  riskLevel,
+} = {}) => {
+  const filters = {};
+
+  if (type) {
+    filters.type =
+      type.toUpperCase();
   }
 
-  writeStore(store);
+  if (riskLevel) {
+    filters.riskLevel =
+      riskLevel.toUpperCase();
+  }
 
-  return store[key];
-}
+  const pageNumber =
+    Math.max(
+      1,
+      Number(page) || 1
+    );
 
-function getThreat(input) {
-  const store = readStore();
+  const limitNumber =
+    Math.min(
+      100,
+      Math.max(
+        1,
+        Number(limit) || 20
+      )
+    );
 
-  return (
-    store[String(input).trim().toLowerCase()] ||
-    null
-  );
-}
+  const skip =
+    (pageNumber - 1) *
+    limitNumber;
 
-function getThreatById(id) {
-  return Object.values(readStore()).find(
-    threat => threat.id === id
-  ) || null;
-}
+  const [
+    reports,
+    total,
+  ] = await Promise.all([
+    ScanReport.find(filters)
+      .sort({
+        createdAt: -1,
+      })
+      .skip(skip)
+      .limit(limitNumber)
+      .lean(),
 
-function getAllThreats() {
-  return Object.values(readStore()).sort(
-    (a, b) => {
-      if (b.risk !== a.risk) {
-        return b.risk - a.risk;
-      }
+    ScanReport.countDocuments(
+      filters
+    ),
+  ]);
 
-      return String(b.last).localeCompare(
-        String(a.last)
-      );
-    }
-  );
-}
+  return {
+    reports,
+
+    pagination: {
+      page: pageNumber,
+
+      limit: limitNumber,
+
+      total,
+
+      pages:
+        Math.ceil(
+          total /
+            limitNumber
+        ),
+    },
+  };
+};
+
+// ==================================================
+// GET SINGLE REPORT
+// ==================================================
+
+const getReportById =
+  async (id) => {
+    return ScanReport.findById(
+      id
+    ).lean();
+  };
+
+// ==================================================
+// EXPORT
+// ==================================================
 
 module.exports = {
   recordThreat,
   getThreat,
-  getThreatById,
   getAllThreats,
+  getReports,
+  getReportById,
 };

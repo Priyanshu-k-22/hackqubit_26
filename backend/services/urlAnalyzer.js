@@ -4,17 +4,9 @@ const { isIP } = require("node:net");
 const { calculateRisk } = require("./riskEngine");
 const { recordThreat } = require("./threatStore");
 
-/*
-|--------------------------------------------------------------------------
-| Trusted Domains
-|--------------------------------------------------------------------------
-|
-| These are treated as known/authorized domains.
-| IMPORTANT:
-| A trusted domain is NOT automatically considered universally safe.
-| It only contributes positive evidence to the analysis.
-|
-*/
+// ==================================================
+// TRUSTED DOMAINS
+// ==================================================
 
 const trustedDomains = [
   "google.com",
@@ -23,35 +15,15 @@ const trustedDomains = [
   "amazon.in",
   "flipkart.com",
   "npci.org.in",
-
   "sbi.co.in",
   "hdfcbank.com",
   "icicibank.com",
   "axisbank.com",
-
-  "paytm.com",
-  "phonepe.com",
-  "zomato.com",
 ];
 
-/*
-|--------------------------------------------------------------------------
-| Brand Intelligence
-|--------------------------------------------------------------------------
-|
-| Used to detect:
-|
-|     sbi-login.com
-|     paytm-verify.com
-|     phonepe-kyc.com
-|
-| while distinguishing them from:
-|
-|     sbi.co.in
-|     paytm.com
-|     phonepe.com
-|
-*/
+// ==================================================
+// BRAND HOSTS
+// ==================================================
 
 const brandHosts = [
   {
@@ -59,43 +31,31 @@ const brandHosts = [
     token: "sbi",
     official: ["sbi.co.in"],
   },
-
   {
     label: "Paytm",
     token: "paytm",
     official: ["paytm.com"],
   },
-
   {
     label: "PhonePe",
     token: "phonepe",
     official: ["phonepe.com"],
   },
-
   {
     label: "Google Pay",
     token: "googlepay",
     official: ["google.com"],
   },
-
   {
     label: "HDFC",
     token: "hdfc",
     official: ["hdfcbank.com"],
   },
-
   {
     label: "ICICI",
     token: "icici",
     official: ["icicibank.com"],
   },
-
-  {
-    label: "Axis Bank",
-    token: "axis",
-    official: ["axisbank.com"],
-  },
-
   {
     label: "Zomato",
     token: "zomato",
@@ -103,117 +63,44 @@ const brandHosts = [
   },
 ];
 
-/*
-|--------------------------------------------------------------------------
-| Suspicious URL Keywords
-|--------------------------------------------------------------------------
-*/
+// ==================================================
+// SUSPICIOUS KEYWORDS
+// ==================================================
 
 const suspiciousKeywords = [
-  "login",
-  "signin",
-  "sign-in",
-
   "verify",
   "verification",
-
+  "kyc",
+  "update",
+  "login",
+  "signin",
   "secure",
   "security",
-
-  "kyc",
-
-  "refund",
-  "cashback",
-  "cash-back",
-
-  "reward",
-  "rewards",
-
-  "prize",
-  "winner",
-
-  "claim",
-
-  "support",
-
+  "account",
   "wallet",
-
   "payment",
-  "pay",
-
-  "bank",
-
-  "credential",
-  "credentials",
-
-  "otp",
-  "pin",
-  "password",
-
-  "unlock",
+  "refund",
+  "reward",
+  "cashback",
+  "offer",
+  "urgent",
   "suspend",
-  "suspended",
-
-  "update",
-  "confirm",
+  "blocked",
+  "activate",
+  "claim",
+  "otp",
+  "password",
+  "credential",
 ];
 
-/*
-|--------------------------------------------------------------------------
-| Sensitive Query Parameters
-|--------------------------------------------------------------------------
-|
-| We only inspect parameter NAMES.
-| Values are NEVER returned in the result.
-|
-*/
-
-const sensitiveQueryPattern =
-  /^(?:token|access_token|auth|authorization|session|session_id|password|passwd|pin|otp|secret|api_key|apikey|key|code)$/i;
-
-/*
-|--------------------------------------------------------------------------
-| Suspicious Path Pattern
-|--------------------------------------------------------------------------
-*/
-
-const suspiciousPathPattern =
-  /(?:login|signin|sign-in|verify|verification|kyc|refund|cashback|reward|prize|winner|claim|support|payment|wallet|otp|password|credential|secure|unlock|suspend)/i;
-
-/*
-|--------------------------------------------------------------------------
-| Helpers
-|--------------------------------------------------------------------------
-*/
-
-function normalizeHostname(hostname) {
-  return hostname
-    .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "");
-}
-
-function domainMatches(hostname, domain) {
-  return (
-    hostname === domain ||
-    hostname.endsWith(`.${domain}`)
-  );
-}
+// ==================================================
+// URL PARSER
+// ==================================================
 
 function parseUrl(input) {
   const trimmed = input.trim();
 
   try {
-    /*
-     * If the user enters:
-     *
-     * example.com
-     *
-     * internally convert it to:
-     *
-     * https://example.com
-     */
-
     const normalized =
       /^https?:\/\//i.test(trimmed)
         ? trimmed
@@ -221,26 +108,19 @@ function parseUrl(input) {
 
     const parsed = new URL(normalized);
 
-    /*
-     * Only HTTP and HTTPS are supported.
-     */
-
     if (
-      !/^https?:$/.test(parsed.protocol)
+      !/^https?:$/.test(
+        parsed.protocol
+      )
     ) {
       return null;
     }
 
-    /*
-     * URL username/password are rejected.
-     *
-     * Example:
-     *
-     * https://admin:password@example.com
-     */
+    if (!parsed.hostname) {
+      return null;
+    }
 
     if (
-      !parsed.hostname ||
       parsed.username ||
       parsed.password
     ) {
@@ -253,43 +133,23 @@ function parseUrl(input) {
   }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Safe URL representation
-|--------------------------------------------------------------------------
-|
-| We don't want passwords, tokens or long random values
-| appearing in the dashboard/report.
-|
-*/
+// ==================================================
+// SAFE URL
+// ==================================================
 
 function getSafeDisplayUrl(parsed) {
-  const safePath = parsed.pathname
-    .split("/")
-    .map((segment) => {
-      /*
-       * Redact:
-       *
-       * very long path segments
-       * Mongo/ObjectId-like strings
-       * long hexadecimal identifiers
-       */
-
-      if (
+  const safePath =
+    parsed.pathname
+      .split("/")
+      .map((segment) =>
         segment.length > 40 ||
-        /^[a-f\d]{24,}$/i.test(segment)
-      ) {
-        return "[redacted]";
-      }
-
-      return segment;
-    })
-    .join("/");
-
-  /*
-   * Keep parameter names.
-   * Remove parameter values.
-   */
+        /^[a-f\d]{24,}$/i.test(
+          segment
+        )
+          ? "[redacted]"
+          : segment
+      )
+      .join("/");
 
   const safeQuery = [
     ...parsed.searchParams.keys(),
@@ -309,195 +169,27 @@ function getSafeDisplayUrl(parsed) {
   }`;
 }
 
-/*
-|--------------------------------------------------------------------------
-| Extract Suspicious Keywords
-|--------------------------------------------------------------------------
-*/
+// ==================================================
+// MAIN ANALYZER
+// ==================================================
 
-function analyzeKeywords(
-  hostname,
-  pathname,
-  search
+async function analyzeUrl(
+  inputUrl
 ) {
-  const text =
-    `${hostname} ${pathname} ${search}`.toLowerCase();
-
-  const matches = [
-    ...new Set(
-      suspiciousKeywords.filter(
-        (keyword) =>
-          text.includes(keyword)
-      )
-    ),
-  ];
-
-  let score = 0;
-
-  if (matches.length >= 5) {
-    score = 90;
-  } else if (matches.length >= 4) {
-    score = 80;
-  } else if (matches.length >= 3) {
-    score = 65;
-  } else if (matches.length >= 2) {
-    score = 45;
-  } else if (matches.length === 1) {
-    score = 25;
-  }
-
-  return {
-    score,
-    matches,
-  };
-}
-
-/*
-|--------------------------------------------------------------------------
-| Brand Detection
-|--------------------------------------------------------------------------
-*/
-
-function analyzeBrand(
-  hostname,
-  pathname
-) {
-  const text =
-    `${hostname}${pathname}`.toLowerCase();
-
-  /*
-   * Find a brand token anywhere in hostname/path.
-   */
-
-  const mentionedBrand =
-    brandHosts.find(
-      ({ token }) =>
-        text.includes(token)
-    );
-
-  if (!mentionedBrand) {
-    return {
-      mentionedBrand: null,
-      recognizedBrand: null,
-      suspiciousBrand: null,
-    };
-  }
-
-  /*
-   * Is the hostname actually owned by
-   * the official domain family?
-   */
-
-  const recognizedBrand =
-    mentionedBrand.official.some(
-      (officialDomain) =>
-        domainMatches(
-          hostname,
-          officialDomain
-        )
-    )
-      ? mentionedBrand
-      : null;
-
-  /*
-   * Brand token outside official domain
-   * = possible impersonation.
-   */
-
-  const suspiciousBrand =
-    recognizedBrand
-      ? null
-      : mentionedBrand;
-
-  return {
-    mentionedBrand,
-    recognizedBrand,
-    suspiciousBrand,
-  };
-}
-
-/*
-|--------------------------------------------------------------------------
-| INVALID RESULT
-|--------------------------------------------------------------------------
-*/
-
-function invalidResult(
-  input,
-  reason
-) {
-  return {
-    id: `SCN-${crypto
-      .randomUUID()
-      .replace(/-/g, "")
-      .slice(0, 12)
-      .toUpperCase()}`,
-
-    kind: "url",
-
-    input: String(
-      input ?? ""
-    ),
-
-    score: 90,
-
-    riskLevel: "HIGH",
-
-    status: "INVALID URL",
-
-    reason,
-
-    matchedDomain: null,
-
-    evidence: [reason],
-
-    breakdown: {},
-
-    domain: "",
-
-    protocol: "-",
-
-    upi: "-",
-
-    payee: "-",
-
-    redirects: null,
-
-    brand: "Unknown",
-
-    reports: 0,
-
-    users: 0,
-
-    campaign: "-",
-
-    demo: false,
-
-    ts: new Date().toISOString(),
-
-    urlDetails: null,
-  };
-}
-
-/*
-|--------------------------------------------------------------------------
-| MAIN URL ANALYZER
-|--------------------------------------------------------------------------
-*/
-
-function analyzeUrl(inputUrl) {
-  /*
-   * --------------------------------------------------------------
-   * 1. Validate input
-   * --------------------------------------------------------------
-   */
+  // ----------------------------------------------
+  // Basic validation
+  // ----------------------------------------------
 
   if (
     typeof inputUrl !== "string"
   ) {
-    return invalidResult(
-      inputUrl,
-      "The entered value is not a valid URL"
+    throw Object.assign(
+      new Error(
+        "The entered value is not a valid URL"
+      ),
+      {
+        statusCode: 400,
+      }
     );
   }
 
@@ -505,69 +197,65 @@ function analyzeUrl(inputUrl) {
     inputUrl.trim();
 
   if (!value) {
-    return invalidResult(
-      value,
-      "URL cannot be empty"
+    throw Object.assign(
+      new Error(
+        "URL is required"
+      ),
+      {
+        statusCode: 400,
+      }
     );
   }
-
-  /*
-   * Protect backend from excessively large input.
-   */
 
   if (value.length > 2048) {
-    return invalidResult(
-      value,
-      "URL exceeds the maximum allowed length of 2048 characters"
+    throw Object.assign(
+      new Error(
+        "URL is too long"
+      ),
+      {
+        statusCode: 400,
+      }
     );
   }
 
-  /*
-   * --------------------------------------------------------------
-   * 2. Parse URL
-   * --------------------------------------------------------------
-   */
+  // ----------------------------------------------
+  // Parse
+  // ----------------------------------------------
 
   const parsedUrl =
     parseUrl(value);
 
   if (!parsedUrl) {
-    return invalidResult(
-      value,
-      "Only valid HTTP and HTTPS URLs without embedded credentials can be analyzed"
+    throw Object.assign(
+      new Error(
+        "The entered value is not a valid URL"
+      ),
+      {
+        statusCode: 400,
+      }
     );
   }
 
-  /*
-   * --------------------------------------------------------------
-   * 3. Normalize hostname
-   * --------------------------------------------------------------
-   */
+  // ----------------------------------------------
+  // Host information
+  // ----------------------------------------------
 
   const hostname =
-    normalizeHostname(
-      parsedUrl.hostname
-    );
+    parsedUrl.hostname
+      .toLowerCase()
+      .replace(
+        /^\[|\]$/g,
+        ""
+      )
+      .replace(/\.$/, "");
 
   const protocol =
     parsedUrl.protocol
       .slice(0, -1)
       .toUpperCase();
 
-  /*
-   * --------------------------------------------------------------
-   * 4. IP detection
-   * --------------------------------------------------------------
-   */
-
   const ipVersion =
     isIP(hostname);
-
-  /*
-   * --------------------------------------------------------------
-   * 5. Hostname structure
-   * --------------------------------------------------------------
-   */
 
   const labels =
     hostname
@@ -582,23 +270,10 @@ function analyzeUrl(inputUrl) {
           labels.length - 2
         );
 
-  /*
-   * --------------------------------------------------------------
-   * 6. Punycode detection
-   * --------------------------------------------------------------
-   */
-
   const isPunycode =
-    labels.some(
-      (label) =>
-        label.startsWith("xn--")
+    labels.some((label) =>
+      label.startsWith("xn--")
     );
-
-  /*
-   * --------------------------------------------------------------
-   * 7. Port analysis
-   * --------------------------------------------------------------
-   */
 
   const expectedPort =
     protocol === "HTTPS"
@@ -612,186 +287,137 @@ function analyzeUrl(inputUrl) {
           expectedPort
     );
 
-  /*
-   * --------------------------------------------------------------
-   * 8. Trusted-domain matching
-   * --------------------------------------------------------------
-   */
+  // ----------------------------------------------
+  // Trusted domain
+  // ----------------------------------------------
 
   const matchedDomain =
     trustedDomains.find(
       (domain) =>
-        domainMatches(
-          hostname,
-          domain
+        hostname === domain ||
+        hostname.endsWith(
+          `.${domain}`
         )
     ) || null;
 
-  /*
-   * --------------------------------------------------------------
-   * 9. Brand analysis
-   * --------------------------------------------------------------
-   */
+  // ----------------------------------------------
+  // Brand detection
+  // ----------------------------------------------
 
-  const {
-    recognizedBrand,
-    suspiciousBrand,
-  } = analyzeBrand(
-    hostname,
-    parsedUrl.pathname
+  const mentionedBrand =
+    brandHosts.find(
+      ({ token }) =>
+        hostname.includes(token)
+    );
+
+  const recognizedBrand =
+    mentionedBrand &&
+    mentionedBrand.official.some(
+      (domain) =>
+        hostname === domain ||
+        hostname.endsWith(
+          `.${domain}`
+        )
+    )
+      ? mentionedBrand
+      : null;
+
+  const suspiciousBrand =
+    mentionedBrand &&
+    !recognizedBrand
+      ? mentionedBrand
+      : null;
+
+  // ----------------------------------------------
+  // Suspicious keywords
+  // ----------------------------------------------
+
+  const lowerUrl =
+    value.toLowerCase();
+
+  const matchedKeywords =
+    suspiciousKeywords.filter(
+      (keyword) =>
+        lowerUrl.includes(keyword)
+    );
+
+  // ----------------------------------------------
+  // Sensitive query parameters
+  // ----------------------------------------------
+
+  const sensitiveQueryKeys = [
+    ...parsedUrl.searchParams.keys(),
+  ].filter((key) =>
+    /^(?:token|access_token|auth|authorization|session|password|passwd|pin|otp|secret|key)$/i.test(
+      key
+    )
   );
 
-  /*
-   * --------------------------------------------------------------
-   * 10. Keyword analysis
-   * --------------------------------------------------------------
-   */
-
-  const keyword =
-    analyzeKeywords(
-      hostname,
-      parsedUrl.pathname,
-      parsedUrl.search
-    );
-
-  /*
-   * --------------------------------------------------------------
-   * 11. Sensitive query parameters
-   * --------------------------------------------------------------
-   */
-
-  const sensitiveQueryKeys =
-    [
-      ...parsedUrl.searchParams.keys(),
-    ].filter((key) =>
-      sensitiveQueryPattern.test(
-        key
-      )
-    );
-
-  /*
-   * --------------------------------------------------------------
-   * 12. URL risk signals
-   * --------------------------------------------------------------
-   */
-
-  /*
-   * HTTP is a risk indicator,
-   * but HTTPS does NOT make a site safe.
-   */
+  // ----------------------------------------------
+  // Risk signals
+  // ----------------------------------------------
 
   const httpsRisk =
     protocol === "HTTPS"
       ? 0
       : 80;
 
-  /*
-   * Long URLs can be suspicious,
-   * especially when combined with
-   * other signals.
-   */
-
   const lengthRisk =
-    value.length > 180
-      ? 85
-      : value.length > 120
-        ? 65
-        : value.length > 80
-          ? 35
-          : 0;
-
-  /*
-   * Raw IP addresses are risky
-   * for payment/login URLs.
-   */
+    value.length > 120
+      ? 70
+      : value.length > 80
+      ? 40
+      : 0;
 
   const ipRisk =
-    ipVersion
-      ? 90
-      : 0;
+    ipVersion ? 90 : 0;
 
-  /*
-   * Excessive subdomains.
-   */
+  const keywordRisk =
+    matchedKeywords.length >= 4
+      ? 80
+      : matchedKeywords.length >= 2
+      ? 50
+      : matchedKeywords.length === 1
+      ? 25
+      : 0;
 
   const subdomainRisk =
-    subdomainCount >= 5
-      ? 90
-      : subdomainCount === 4
-        ? 75
-        : subdomainCount === 3
-          ? 55
-          : subdomainCount === 2
-            ? 25
-            : 0;
-
-  /*
-   * Punycode can be legitimate,
-   * therefore we don't immediately call it malicious.
-   */
-
-  const punycodeRisk =
-    isPunycode
-      ? 70
+    subdomainCount >= 4
+      ? 80
+      : subdomainCount === 3
+      ? 55
+      : subdomainCount === 2
+      ? 25
       : 0;
 
-  /*
-   * Non-standard port.
-   */
+  const punycodeRisk =
+    isPunycode ? 70 : 0;
 
   const portRisk =
     hasNonStandardPort
-      ? 45
+      ? 40
       : 0;
 
-  /*
-   * Credential/session-related parameters.
-   */
-
   const sensitiveQueryRisk =
-    sensitiveQueryKeys.length >= 2
-      ? 90
-      : sensitiveQueryKeys.length === 1
-        ? 70
-        : 0;
-
-  /*
-   * Brand mismatch is one of our strongest
-   * local indicators.
-   */
+    sensitiveQueryKeys.length
+      ? 80
+      : 0;
 
   const brandRisk =
     suspiciousBrand
-      ? 90
+      ? 85
       : 0;
 
-  /*
-   * Login/payment/verification-looking path.
-   */
-
-  const suspiciousPath =
-    suspiciousPathPattern.test(
-      parsedUrl.pathname
-    );
-
-  const suspiciousPathRisk =
-    suspiciousPath
-      ? 55
-      : 0;
-
-  /*
-   * --------------------------------------------------------------
-   * 13. Calculate risk
-   * --------------------------------------------------------------
-   */
+  // ----------------------------------------------
+  // Calculate risk
+  // ----------------------------------------------
 
   const risk =
     calculateRisk({
       httpsRisk,
       lengthRisk,
       ipRisk,
-      keywordRisk:
-        keyword.score,
+      keywordRisk,
       subdomainRisk,
       punycodeRisk,
       portRisk,
@@ -799,279 +425,144 @@ function analyzeUrl(inputUrl) {
       brandRisk,
     });
 
-  /*
-   * --------------------------------------------------------------
-   * 14. IMPORTANT
-   * --------------------------------------------------------------
-   *
-   * DO NOT overwrite risk.score here.
-   *
-   * The previous implementation did:
-   *
-   *     trusted → 10
-   *     unknown → 75
-   *
-   * That destroyed the actual risk calculation.
-   *
-   * We now preserve the calculated score.
-   */
+  // ----------------------------------------------
+  // Trusted domains
+  // ----------------------------------------------
 
-  /*
-   * --------------------------------------------------------------
-   * 15. Determine status
-   * --------------------------------------------------------------
-   */
+  if (matchedDomain) {
+    risk.score = 10;
+    risk.riskLevel = "LOW";
 
-  let status;
-
-  if (
-    risk.riskLevel === "CRITICAL"
-  ) {
-    status = "HIGH RISK";
-  } else if (
-    risk.riskLevel === "HIGH"
-  ) {
-    status = "HIGH RISK";
-  } else if (
-    risk.riskLevel === "MEDIUM"
-  ) {
-    status = "SUSPICIOUS";
-  } else if (
-    matchedDomain
-  ) {
-    status = "AUTHORIZED";
-  } else {
-    status = "LOW RISK";
+    risk.breakdown[
+      "Trusted Domain Match"
+    ] = 0;
   }
 
-  /*
-   * --------------------------------------------------------------
-   * 16. Determine reason
-   * --------------------------------------------------------------
-   */
-
-  let reason;
-
-  if (suspiciousBrand) {
-    reason =
-      `Possible ${suspiciousBrand.label} impersonation detected`;
-  } else if (
-    ipRisk >= 80
-  ) {
-    reason =
-      "URL uses a raw IP address instead of a normal domain";
-  } else if (
-    sensitiveQueryRisk >= 70
-  ) {
-    reason =
-      "URL contains parameters commonly associated with credentials or session data";
-  } else if (
-    punycodeRisk >= 70
-  ) {
-    reason =
-      "URL contains a punycode hostname that requires additional verification";
-  } else if (
-    keyword.score >= 65
-  ) {
-    reason =
-      "Multiple suspicious keywords were detected in the URL";
-  } else if (
-    matchedDomain
-  ) {
-    reason =
-      `Domain belongs to the trusted ${matchedDomain} domain family`;
-  } else if (
-    risk.riskLevel === "LOW"
-  ) {
-    reason =
-      "No strong malicious URL indicators were detected";
-  } else {
-    reason =
-      "URL contains one or more suspicious structural indicators";
-  }
-
-  /*
-   * --------------------------------------------------------------
-   * 17. Generate evidence
-   * --------------------------------------------------------------
-   */
+  // ----------------------------------------------
+  // Evidence
+  // ----------------------------------------------
 
   const evidence = [];
 
-  /*
-   * Trusted domain evidence
-   */
+  let status;
+  let reason;
 
   if (matchedDomain) {
-    evidence.push(
-      `Hostname belongs to trusted domain ${matchedDomain}`
-    );
+    status = "AUTHORIZED";
+
+    reason =
+      "Domain is present in the trusted domain allowlist";
+  } else if (
+    suspiciousBrand
+  ) {
+    status = "SUSPICIOUS";
+
+    reason =
+      `Domain appears to imitate ${suspiciousBrand.label}`;
+  } else if (
+    risk.riskLevel === "CRITICAL"
+  ) {
+    status = "BLOCKED";
+
+    reason =
+      "Multiple high-risk URL indicators were detected";
+  } else if (
+    risk.riskLevel === "HIGH"
+  ) {
+    status = "SUSPICIOUS";
+
+    reason =
+      "High-risk URL indicators were detected";
   } else {
-    evidence.push(
-      "Hostname is not present in the local trusted-domain registry"
-    );
+    status = "UNKNOWN";
+
+    reason =
+      "Domain is not present in the authorized domain allowlist";
   }
 
-  /*
-   * Official brand evidence
-   */
+  evidence.push(reason);
 
   if (recognizedBrand) {
     evidence.push(
-      `Hostname matches the known official ${recognizedBrand.label} domain family`
+      `Hostname matches the local ${recognizedBrand.label} domain rule; live ownership and reputation were not checked`
     );
   }
 
-  /*
-   * Brand impersonation
-   */
-
-  if (suspiciousBrand) {
-    evidence.push(
-      `Possible ${suspiciousBrand.label} impersonation: brand token appears outside its official domain`
-    );
-  }
-
-  /*
-   * HTTP
-   */
-
-  if (
-    protocol === "HTTP"
-  ) {
+  if (protocol === "HTTP") {
     evidence.push(
       "Connection uses HTTP and is not encrypted"
     );
   }
 
-  /*
-   * IP
-   */
-
   if (ipVersion) {
     evidence.push(
-      `Hostname is a raw IPv${ipVersion} address instead of a normal domain`
+      `Hostname is a raw IPv${ipVersion} address`
     );
   }
 
-  /*
-   * Keywords
-   */
-
-  if (
-    keyword.matches.length
-  ) {
+  if (lengthRisk) {
     evidence.push(
-      `Suspicious URL terms detected: ${keyword.matches.join(", ")}`
+      value.length > 120
+        ? "URL is unusually long"
+        : "URL is longer than typical"
     );
   }
 
-  /*
-   * Long URL
-   */
-
-  if (
-    lengthRisk > 0
-  ) {
+  if (keywordRisk) {
     evidence.push(
-      `URL length is ${value.length} characters`
+      `Suspicious URL keywords detected: ${matchedKeywords.join(
+        ", "
+      )}`
     );
   }
 
-  /*
-   * Subdomains
-   */
-
-  if (
-    subdomainRisk > 0
-  ) {
+  if (subdomainRisk) {
     evidence.push(
-      `${subdomainCount} nested hostname labels were detected`
+      `${subdomainCount} additional hostname labels were detected`
     );
   }
-
-  /*
-   * Punycode
-   */
 
   if (isPunycode) {
     evidence.push(
-      "Hostname contains a punycode label; verify the spelling carefully"
+      "Hostname contains an internationalized (punycode) label; verify the spelling carefully"
     );
   }
 
-  /*
-   * Port
-   */
-
-  if (
-    hasNonStandardPort
-  ) {
+  if (hasNonStandardPort) {
     evidence.push(
       `URL uses a non-standard port (${parsedUrl.port})`
     );
   }
 
-  /*
-   * Sensitive query
-   */
-
   if (
     sensitiveQueryKeys.length
   ) {
     evidence.push(
-      `Sensitive parameter names detected: ${sensitiveQueryKeys.join(", ")}; values were redacted`
+      "URL contains query parameter names commonly used for credentials or session tokens; values were redacted"
     );
   }
 
-  /*
-   * Suspicious path
-   */
-
-  if (
-    suspiciousPath
-  ) {
+  if (suspiciousBrand) {
     evidence.push(
-      "Path contains terms commonly associated with login, verification, payment or credential pages"
+      `Hostname uses ${suspiciousBrand.label} branding outside its known official domain`
     );
   }
-
-  /*
-   * General safe evidence
-   */
-
-  if (
-    risk.riskLevel === "LOW" &&
-    evidence.length <= 2
-  ) {
-    evidence.push(
-      "No strong malicious URL indicators were found by the local rules"
-    );
-  }
-
-  /*
-   * IMPORTANT DISCLAIMER
-   */
 
   evidence.push(
-    "URL structure analysis cannot prove who operates the destination or whether a payment request is legitimate"
+    "URL structure checks cannot confirm who operates the destination or whether a payment request is legitimate"
   );
 
-  /*
-   * --------------------------------------------------------------
-   * 18. Build result
-   * --------------------------------------------------------------
-   */
-
-  const today =
-    new Date()
-      .toISOString()
-      .slice(0, 10);
+  // ----------------------------------------------
+  // Build result
+  // ----------------------------------------------
 
   const safeUrl =
     getSafeDisplayUrl(
       parsedUrl
     );
+
+  const now =
+    new Date();
 
   const result = {
     id: `SCN-${crypto
@@ -1108,11 +599,6 @@ function analyzeUrl(inputUrl) {
 
     payee: "-",
 
-    /*
-     * We intentionally don't follow redirects yet.
-     * That will belong to the crawler feature.
-     */
-
     redirects: null,
 
     brand:
@@ -1124,23 +610,28 @@ function analyzeUrl(inputUrl) {
 
     users: 0,
 
-    first: today,
+    first:
+      now.toISOString(),
 
-    last: today,
+    last:
+      now.toISOString(),
 
     campaign: "-",
 
     demo: false,
 
     ts:
-      new Date().toISOString(),
+      now.toISOString(),
 
     urlDetails: {
       hostname,
 
       path:
-        parsedUrl.pathname ||
-        "/",
+        safeUrl
+          .slice(
+            parsedUrl.origin.length
+          )
+          .split("?")[0],
 
       queryParameterCount:
         [
@@ -1166,52 +657,75 @@ function analyzeUrl(inputUrl) {
       matchedTrustedDomain:
         matchedDomain,
 
-      suspiciousKeywords:
-        keyword.matches,
-
-      suspiciousPath,
+      matchedKeywords,
     },
   };
 
-  /*
-   * --------------------------------------------------------------
-   * 19. Store threat observation
-   * --------------------------------------------------------------
-   *
-   * IMPORTANT:
-   *
-   * We store the hostname as the primary IOC.
-   *
-   * Example:
-   *
-   * https://sbi-login.com/a
-   *
-   * https://sbi-login.com/b
-   *
-   * both belong to:
-   *
-   * sbi-login.com
-   *
-   * and therefore should contribute to the same threat record.
-   */
+  // ----------------------------------------------
+  // SAVE REPORT TO MONGODB
+  // ----------------------------------------------
 
   const threat =
-    recordThreat(
+    await recordThreat(
       hostname,
       {
+        type: "URL",
+
+        input: safeUrl,
+
+        normalizedInput:
+          hostname,
+
+        target:
+          safeUrl,
+
+        domain:
+          hostname,
+
+        score:
+          risk.score,
+
+        riskLevel:
+          risk.riskLevel,
+
         status,
+
+        reason,
+
+        brand:
+          result.brand,
+
         campaign:
-          suspiciousBrand
-            ? `CAM-${suspiciousBrand.token.toUpperCase()}`
-            : undefined,
+          null,
+
+        evidence,
+
+        breakdown:
+          risk.breakdown,
+
+        metadata: {
+          source: "url",
+          protocol,
+          matchedDomain,
+          matchedKeywords,
+          urlDetails:
+            result.urlDetails,
+        },
+
+        analysis:
+          result,
       }
     );
 
-  /*
-   * --------------------------------------------------------------
-   * 20. Attach threat intelligence metadata
-   * --------------------------------------------------------------
-   */
+  // ----------------------------------------------
+  // Attach DB information
+  // ----------------------------------------------
+
+  result.threatId =
+    threat.id;
+
+  result.reportId =
+    threat.reportId;
 
   result.reports =
     threat.reports;
@@ -1227,12 +741,6 @@ function analyzeUrl(inputUrl) {
 
   result.campaign =
     threat.campaign;
-
-  /*
-   * --------------------------------------------------------------
-   * 21. Return final result
-   * --------------------------------------------------------------
-   */
 
   return result;
 }

@@ -1,60 +1,208 @@
 const express = require("express");
 
-const router = express.Router();
+const router =
+  express.Router();
 
 const {
   getAllThreats,
+
   getThreat,
-  getThreatById,
+
+  getReports,
+
+  getReportById,
 } = require("../services/threatStore");
 
-// GET /api/threats
-router.get("/", (req, res) => {
-  res.json({
-    success: true,
-    threats: getAllThreats(),
-  });
-});
+/*
+|--------------------------------------------------------------------------
+| GET /api/threats
+|--------------------------------------------------------------------------
+|
+| Aggregated threats.
+|
+*/
 
-// GET /api/threats/id/:id
-router.get("/id/:id", (req, res) => {
-  const threat = getThreatById(req.params.id);
+router.get(
+  "/",
+  async (req, res) => {
+    try {
+      const threats =
+        await getAllThreats();
 
-  if (!threat) {
-    return res.status(404).json({
-      message: "Threat not found",
-    });
+      return res.json({
+        success: true,
+
+        threats,
+      });
+    } catch (error) {
+      console.error(
+        "Get threats error:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch threats",
+      });
+    }
   }
+);
 
-  return res.json({
-    success: true,
-    threat,
-  });
-});
+/*
+|--------------------------------------------------------------------------
+| GET /api/threats/lookup
+|--------------------------------------------------------------------------
+|
+| Example:
+|
+| /api/threats/lookup?input=sbi-login.com
+|
+*/
 
-// GET /api/threats/lookup?input=example.com
-router.get("/lookup", (req, res) => {
-  const { input } = req.query;
+router.get(
+  "/lookup",
+  async (req, res) => {
+    try {
+      const {
+        input,
+      } = req.query;
 
-  if (!input) {
-    return res.status(400).json({
-      message: "Input is required",
-    });
+      if (!input) {
+        return res.status(400).json({
+          message:
+            "Input is required",
+        });
+      }
+
+      const threat =
+        await getThreat(
+          input
+        );
+
+      if (!threat) {
+        return res.status(404).json({
+          message:
+            "Threat not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+
+        input,
+
+        ...threat,
+      });
+    } catch (error) {
+      console.error(
+        "Threat lookup error:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Threat lookup failed",
+      });
+    }
   }
+);
 
-  const threat = getThreat(input);
+/*
+|--------------------------------------------------------------------------
+| GET /api/threats/reports
+|--------------------------------------------------------------------------
+|
+| Every scan stored in MongoDB.
+|
+| Supports:
+|
+| ?page=1
+| ?limit=20
+| ?type=URL
+| ?riskLevel=HIGH
+|
+*/
 
-  if (!threat) {
-    return res.status(404).json({
-      message: "Threat not found",
-    });
+router.get(
+  "/reports",
+  async (req, res) => {
+    try {
+      const {
+        page,
+        limit,
+        type,
+        riskLevel,
+      } = req.query;
+
+      const result =
+        await getReports({
+          page,
+
+          limit,
+
+          type,
+
+          riskLevel,
+        });
+
+      return res.json({
+        success: true,
+
+        ...result,
+      });
+    } catch (error) {
+      console.error(
+        "Get reports error:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch reports",
+      });
+    }
   }
+);
 
-  return res.json({
-    success: true,
-    input,
-    ...threat,
-  });
-});
+/*
+|--------------------------------------------------------------------------
+| GET /api/threats/reports/:id
+|--------------------------------------------------------------------------
+*/
+
+router.get(
+  "/reports/:id",
+  async (req, res) => {
+    try {
+      const report =
+        await getReportById(
+          req.params.id
+        );
+
+      if (!report) {
+        return res.status(404).json({
+          message:
+            "Report not found",
+        });
+      }
+
+      return res.json({
+        success: true,
+
+        report,
+      });
+    } catch (error) {
+      console.error(
+        "Get report error:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to fetch report",
+      });
+    }
+  }
+);
 
 module.exports = router;
