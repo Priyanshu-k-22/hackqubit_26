@@ -1,8 +1,17 @@
 import {threats,campaigns} from '../data/mock';
-const BASE=import.meta.env.VITE_API_BASE_URL||'';
+const configuredBase=import.meta.env.VITE_API_BASE_URL;
+const trimmedBase=configuredBase?.replace(/\/+$/,'');
+const BASE=trimmedBase?(trimmedBase.endsWith('/api')?trimmedBase:`${trimmedBase}/api`):'/api';
+const DEMO=import.meta.env.VITE_DEMO_MODE==='true';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const hash=s=>[...s].reduce((a,c)=>(a*31+c.charCodeAt(0))>>>0,7);
 const known=['official','sbi.co.in','google.com','paytm.com'];
+const safeInput=(kind,input)=>{
+  if(kind!=='url')return input;
+  try{const url=new URL(input.includes('://')?input:`https://${input}`),query=[...url.searchParams.keys()].map(key=>`${encodeURIComponent(key)}=[redacted]`).join('&');
+    return `${url.origin}${url.pathname}${query?`?${query}`:''}`
+  }catch{return input}
+};
 // ---- mock layer: swap for real endpoints; UI code stays unchanged ----
 function mockAnalyze(kind,input){
   const h=hash(input),m=threats.find(t=>input.includes(t.target.split('?')[0])||t.target.includes(input));
@@ -14,15 +23,19 @@ function mockAnalyze(kind,input){
   const ev=low?['No known threat indicators','No matching campaign found','Valid HTTPS certificate (simulated)','Domain matches official brand registry (simulated)']
    :[`Brand visual similarity: ${60+h%39}%`,'Suspicious redirect chain','Newly observed domain','Payment credential collection pattern','Shared infrastructure with known campaign',`Repeated reports: ${reports}`];
   const b=n=>Math.min(99,Math.max(1,score+((h>>n)%11)-5));
-  return {id:'SCN-'+h.toString(16).toUpperCase(),kind,input,score,domain,upi,payee,redirects:low?0:h%4,protocol:input.startsWith('http://')?'HTTP':'HTTPS',
+  return {id:'SCN-'+h.toString(16).toUpperCase(),kind,input:safeInput(kind,input),score,domain,upi,payee,redirects:low?0:h%4,protocol:input.startsWith('http://')?'HTTP':'HTTPS',
    brand:m?.brand||(low?'Official brand':'Unknown / possible impersonation'),reports,campaign:m?.campaign||(low?'None':'CAM-017'),status:m?.status||(low?'Low Risk':'Under Review'),
    first:m?.first||'2026-10-07',last:m?.last||'2026-10-07',users:Math.ceil(reports*.7),evidence:ev,demo:true,ts:new Date().toISOString(),
    breakdown:{'Visual similarity':b(1),'Domain risk':b(2),'Behavior':b(3),'Infrastructure':b(4),'Threat intelligence':b(5)}};
 }
 async function call(path,body,fallback){
-  if(!BASE){await sleep(300);return fallback()}
-  try{const r=await fetch(BASE+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw new Error(r.status);return await r.json()}
-  catch{const v=fallback();v.backendUnavailable=true;return v}
+  if(DEMO){await sleep(300);return fallback()}
+  let response;
+  try{response=await fetch(BASE+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})}
+  catch{const value=fallback();value.backendUnavailable=true;return value}
+  const data=await response.json().catch(()=>({message:'Invalid server response'}));
+  if(!response.ok)throw new Error(data.message||`Request failed (${response.status})`);
+  return data;
 }
 export const save=r=>{const all=JSON.parse(localStorage.getItem('ups_results')||'{}');all[r.id]=r;localStorage.setItem('ups_results',JSON.stringify(all));return r};
 export const scannerApi={
@@ -34,4 +47,4 @@ export const threatApi={list:async()=>threats,getResult:id=>{const t=threats.fin
 export const campaignApi={list:async()=>campaigns};
 export const reportApi={get:id=>JSON.parse(localStorage.getItem('ups_results')||'{}')[id],list:()=>Object.values(JSON.parse(localStorage.getItem('ups_results')||'{}'))};
 export const feedbackApi={submit:b=>call('/feedback',b,()=>({ok:true,demo:true}))};
-export const isDemo=!BASE;
+export const isDemo=DEMO;
