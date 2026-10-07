@@ -1,4 +1,5 @@
 import {threats,campaigns} from '../data/mock';
+import {analyzeQrPayload} from '../../../shared/qrAnalyzer.mjs';
 const configuredBase=import.meta.env.VITE_API_BASE_URL;
 const trimmedBase=configuredBase?.replace(/\/+$/,'');
 const BASE=trimmedBase?(trimmedBase.endsWith('/api')?trimmedBase:`${trimmedBase}/api`):'/api';
@@ -41,7 +42,7 @@ export const save=r=>{const all=JSON.parse(localStorage.getItem('ups_results')||
 export const scannerApi={
   analyzeUrl:u=>call('/scan/url',{url:u},()=>mockAnalyze('url',u)).then(save),
   analyzeUpi:u=>call('/scan/upi',{upi:u},()=>mockAnalyze('upi',u)).then(save),
-  analyzeQr:p=>call('/scan/qr',{payload:p},()=>mockAnalyze('qr',p)).then(save),
+  analyzeQr:p=>call('/scan/qr',{payload:p},()=>analyzeQrPayload(p)).then(save),
   analyzeImage:f=>call('/scan/image',{name:f.name},()=>mockAnalyze('image',f.name)).then(save)};
 export const threatApi={list:async()=>threats,getResult:id=>{const t=threats.find(x=>x.id===id);return t&&save(mockAnalyze('url',t.target))}};
 export const campaignApi={list:async()=>campaigns};

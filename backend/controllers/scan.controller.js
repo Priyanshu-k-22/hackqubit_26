@@ -1,5 +1,20 @@
 const { analyzeUrl } = require("../services/urlAnalyzer");
 const { analyzeUpi } = require("../services/upiAnalyzer");
+const scanQr = async (req, res) => {
+  const payload = req.body?.payload;
+  if (typeof payload !== "string" || !payload.trim()) {
+    return res.status(400).json({ message: "QR payload is required and must be a string" });
+  }
+
+  try {
+    const { analyzeQrPayload } = await import("../../shared/qrAnalyzer.mjs");
+    return res.status(201).json(analyzeQrPayload(payload));
+  } catch (error) {
+    console.error("QR scan error:", error);
+    return res.status(500).json({ message: "QR scanning failed" });
+  }
+};
+
 const scanUrl = (req, res) => {
   try {
     const url = req.body?.url;
@@ -76,5 +91,6 @@ const scanUrlRateLimit = (req, res, next) => {
 module.exports = {
   scanUrl,
   scanUpi,
+  scanQr,
   scanUrlRateLimit,
 };
