@@ -1,0 +1,12 @@
+@tailwind base;@tailwind components;@tailwind utilities;
+body{@apply bg-slate-100 text-slate-800 antialiased}.dark body{@apply bg-ink-950 text-slate-200}
+.panel{@apply rounded-lg border border-slate-200 bg-white dark:border-ink-700 dark:bg-ink-900}
+.btn{@apply inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition active:scale-[.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-cyan-500 disabled:opacity-50}
+.btn-p{@apply btn bg-cyan-600 text-white hover:bg-cyan-500 hover:shadow-lg hover:shadow-cyan-500/20}
+.btn-s{@apply btn border border-slate-300 hover:bg-slate-100 dark:border-ink-700 dark:hover:bg-ink-800}
+.inp{@apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm dark:border-ink-700 dark:bg-ink-950 focus:outline-none focus:ring-2 focus:ring-cyan-500}
+.grid-bg{background-image:linear-gradient(rgba(34,211,238,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.06) 1px,transparent 1px);background-size:28px 28px}
+@keyframes sweep{0%{top:0}100%{top:100%}}.sweep{animation:sweep 1.8s ease-in-out infinite alternate}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media print{.no-print{display:none!important}body{background:#fff!important;color:#000!important}.panel{border-color:#ccc!important;background:#fff!important;break-inside:avoid}.print-only{display:block!important}}
+.print-only{display:none}

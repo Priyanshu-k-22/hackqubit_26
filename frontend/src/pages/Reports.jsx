@@ -1,0 +1,4 @@
+import {Link} from 'react-router-dom';import {reportApi} from '../services/api';import {Empty,RiskBadge} from '../components/ui';
+export default function Reports(){const rs=reportApi.list().reverse();
+  return <div className="space-y-4"><h1 className="text-2xl font-semibold">Reports</h1>{!rs.length?<Empty text="No reports yet. Scan a target, then choose Generate full report."/>:
+  <div className="grid gap-3 md:grid-cols-2">{rs.map(r=><Link key={r.id} to={`/report/${r.id}`} className="panel block p-4 transition hover:-translate-y-0.5 hover:shadow-lg"><div className="flex justify-between"><span className="font-mono text-xs">{r.id}</span><RiskBadge score={r.score}/></div><div className="mt-2 truncate text-sm">{r.input}</div><div className="text-xs text-slate-500">{new Date(r.ts).toLocaleString()}</div></Link>)}</div>}</div>}
